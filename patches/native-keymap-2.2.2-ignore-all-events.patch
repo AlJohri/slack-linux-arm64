@@ -1,0 +1,51 @@
+Add ignoreAllEvents to native-keymap 2.2.2.
+
+Slack ships the private fork @tinyspeck/native-keymap@2.2.3, which public npm
+does not carry. The fork adds one function. Slack's main process calls it once,
+on will-quit, through a wrapper that swallows a missing binding and returns
+false:
+
+    app.on("will-quit", () => { ... Os.ignoreAllEvents() })
+
+Without the function the call throws on every quit. The Linux implementation is
+a no-op because _OnDidChangeKeyboardLayout registers no X11 listener.
+
+Apply with: patch -p2 -d <native-keymap source dir>
+
+--- a/package/src/keymapping.h
++++ b/package/src/keymapping.h
+@@ -39,6 +39,7 @@
+ napi_value _GetCurrentKeyboardLayout(napi_env env, napi_callback_info info);
+ napi_value _OnDidChangeKeyboardLayout(napi_env env, napi_callback_info info);
+ napi_value _isISOKeyboard(napi_env env, napi_callback_info info);
++napi_value _ignoreAllEvents(napi_env env, napi_callback_info info);
+ 
+ napi_status napi_set_named_property_string_utf8(napi_env env, napi_value object, const char *utf8Name, const char *value);
+ napi_value napi_fetch_null(napi_env env);
+--- a/package/src/keyboard_x.cc
++++ b/package/src/keyboard_x.cc
+@@ -267,4 +267,10 @@
+   return napi_fetch_undefined(env);
+ }
+ 
++// X11 reports no layout-change events here -- _OnDidChangeKeyboardLayout
++// registers no listener -- so there is nothing to stop.
++napi_value _ignoreAllEvents(napi_env env, napi_callback_info info) {
++  return napi_fetch_undefined(env);
++}
++
+ } // namespace vscode_keyboard
+--- a/package/src/keymapping.cc
++++ b/package/src/keymapping.cc
+@@ -57,6 +57,11 @@
+     NAPI_CALL(env, napi_create_function(env, NULL, 0, _isISOKeyboard, NULL, &isISOKeyboard));
+     NAPI_CALL(env, napi_set_named_property(env, exports, "isISOKeyboard", isISOKeyboard));
+   }
++  {
++    napi_value ignoreAllEvents;
++    NAPI_CALL(env, napi_create_function(env, NULL, 0, _ignoreAllEvents, NULL, &ignoreAllEvents));
++    NAPI_CALL(env, napi_set_named_property(env, exports, "ignoreAllEvents", ignoreAllEvents));
++  }
+ 
+   return exports;
+ }
